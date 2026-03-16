@@ -1,4 +1,4 @@
-name: Build M32 Kernel Legacy
+name: Build M32 Kernel Surgical
 on:
   push:
     branches: [ TWRP_11_Staging ]
@@ -13,31 +13,34 @@ jobs:
 
       - name: Build in Docker (Legacy Environment)
         run: |
-          # We use a Docker container that mimics an older Ubuntu environment
           docker run --rm -v $(pwd):/work -w /work ubuntu:18.04 bash -c "
             apt-get update && apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-aarch64-linux-gnu 
             
             export ARCH=arm64
             export CROSS_COMPILE=aarch64-linux-gnu-
             
-            # Clean and Setup
+            # 1. Clean and Setup
             make clean
             make mrproper
             make m32_defconfig
             
-            # Apply patches directly to defconfig before building
-            sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' .config
+            # 2. SURGICAL REMOVAL: Disable the drivers that are crashing the build
+            # Disable Samsung Performance Monitoring (missing files)
             sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
-            sed -i 's/CONFIG_SECURITY_DEFEX=y/CONFIG_SECURITY_DEFEX=n/g' .config
+            sed -i 's/CONFIG_TCORE=y/CONFIG_TCORE=n/g' .config
             
-            # Inject Webcam Support
+            # Disable Security layers that clash with modern tools
+            sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' .config
+            sed -i 's/CONFIG_SECURITY_DEFEX=y/CONFIG_SECURITY_DEFEX=n/g' .config
+            sed -i 's/CONFIG_RKP_KDP=y/CONFIG_RKP_KDP=n/g' .config
+            
+            # 3. ENABLE WEBCAM SUPPORT
             echo 'CONFIG_USB_CONFIGFS_F_UVC=y' >> .config
             echo 'CONFIG_USB_F_UVC=y' >> .config
             echo 'CONFIG_VIDEO_V4L2=y' >> .config
             
+            # 4. Finalize and Build
             make olddefconfig
-            
-            # Final build command
             make -j$(nproc) KCFLAGS='-w'
           "
 
@@ -46,9 +49,10 @@ jobs:
           if [ -f arch/arm64/boot/Image.gz-dtb ]; then
             echo "SUCCESS: Kernel found!"
           elif [ -f arch/arm64/boot/Image.gz ]; then
+            echo "Kernel built as Image.gz, renaming..."
             cp arch/arm64/boot/Image.gz arch/arm64/boot/Image.gz-dtb
           else
-            echo "STILL FAILING: Searching for error..."
+            echo "FAILED: The kernel still did not finish building."
             exit 1
           fi
 
