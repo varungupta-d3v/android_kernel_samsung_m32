@@ -4,7 +4,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # This will actually find a server now
+    runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
@@ -14,26 +14,27 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          # We install gcc-aarch64-linux-gnu which is the standard cross-compiler on newer Ubuntu
           sudo apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-aarch64-linux-gnu
 
       - name: Compile Kernel
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
+          # This forces the build to use 'bash' instead of 'sh' to fix the "Illegal option" errors
           export SHELL=/bin/bash
+          export CONFIG_SHELL=/bin/bash
           
-          # Clean up
           make clean
           make mrproper
-          
-          # Setup Config
           make m32_defconfig
           
-          # Neutralize the missing kperfmon files (the fix from before)
+          # FIXES:
+          # 1. Disable the Stack Protector check that caused Error 1
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' .config
+          # 2. Skip the Samsung performance monitor errors
           sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
           
-          # Bake it!
+          # Build
           make -j$(nproc)
           
       - name: Upload Finished Kernel
