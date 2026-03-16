@@ -4,7 +4,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04 # Older version of Ubuntu for better compatibility
+    runs-on: ubuntu-latest # This will actually find a server now
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
@@ -14,29 +14,26 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-9-aarch64-linux-gnu
+          # We install gcc-aarch64-linux-gnu which is the standard cross-compiler on newer Ubuntu
+          sudo apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-aarch64-linux-gnu
 
       - name: Compile Kernel
         run: |
           export ARCH=arm64
-          # Use GCC 9 specifically
           export CROSS_COMPILE=aarch64-linux-gnu-
-          export CC=aarch64-linux-gnu-gcc-9
-          
-          # Fix the "Illegal option" errors by forcing a standard shell
           export SHELL=/bin/bash
           
-          # 1. Clean up
+          # Clean up
           make clean
           make mrproper
           
-          # 2. Setup Config
+          # Setup Config
           make m32_defconfig
           
-          # 3. Neutralize the missing kperfmon files so they don't stop the build
+          # Neutralize the missing kperfmon files (the fix from before)
           sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
           
-          # 4. Bake it!
+          # Bake it!
           make -j$(nproc)
           
       - name: Upload Finished Kernel
