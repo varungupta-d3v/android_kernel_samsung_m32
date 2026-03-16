@@ -1,4 +1,4 @@
-name: Build M32 Kernel
+name: Build M32 Kernel Legacy
 on:
   push:
     branches: [ TWRP_11_Staging ]
@@ -7,64 +7,52 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
 
-      - name: Install Build Tools
+      - name: Build in Docker (Legacy Environment)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-aarch64-linux-gnu
+          # We use a Docker container that mimics an older Ubuntu environment
+          docker run --rm -v $(pwd):/work -w /work ubuntu:18.04 bash -c "
+            apt-get update && apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-aarch64-linux-gnu 
+            
+            export ARCH=arm64
+            export CROSS_COMPILE=aarch64-linux-gnu-
+            
+            # Clean and Setup
+            make clean
+            make mrproper
+            make m32_defconfig
+            
+            # Apply patches directly to defconfig before building
+            sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' .config
+            sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
+            sed -i 's/CONFIG_SECURITY_DEFEX=y/CONFIG_SECURITY_DEFEX=n/g' .config
+            
+            # Inject Webcam Support
+            echo 'CONFIG_USB_CONFIGFS_F_UVC=y' >> .config
+            echo 'CONFIG_USB_F_UVC=y' >> .config
+            echo 'CONFIG_VIDEO_V4L2=y' >> .config
+            
+            make olddefconfig
+            
+            # Final build command
+            make -j$(nproc) KCFLAGS='-w'
+          "
 
-      - name: Compile Kernel
+      - name: Check and Upload
         run: |
-          # 1. Setup Shell and Environment
-          sudo rm /bin/sh && sudo ln -s /bin/bash /bin/sh
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export SHELL=/bin/bash
-          
-          # 2. Clean previous attempts
-          make clean
-          make mrproper
-          
-          # 3. Initialize Config
-          make m32_defconfig
-          
-          # 4. Disable Samsung Security/Monitoring (The "Crashing" features)
-          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' .config
-          sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
-          sed -i 's/CONFIG_SECURITY_DEFEX=y/CONFIG_SECURITY_DEFEX=n/g' .config
-          sed -i 's/CONFIG_RKP_KDP=y/CONFIG_RKP_KDP=n/g' .config
-          sed -i 's/CONFIG_SAMSUNG_PRODUCT_SHIP=y/CONFIG_SAMSUNG_PRODUCT_SHIP=n/g' .config
-          sed -i 's/CONFIG_INTEGRITY_CHECK=y/CONFIG_INTEGRITY_CHECK=n/g' .config
-          
-          # 5. Inject USB Webcam (UVC) Support
-          echo "CONFIG_USB_CONFIGFS_F_UVC=y" >> .config
-          echo "CONFIG_USB_F_UVC=y" >> .config
-          echo "CONFIG_VIDEO_V4L2=y" >> .config
-          
-          # 6. Finalize Config
-          make olddefconfig
-          
-          # 7. Execute Build (Ignore warnings and try to survive minor errors)
-          # We use || true so the script doesn't stop if a minor module fails
-          make -j$(nproc) KCFLAGS="-w" || true
-          
-          # 8. Check if the "Engine" was actually created
           if [ -f arch/arm64/boot/Image.gz-dtb ]; then
-            echo "SUCCESS: Kernel built successfully!"
+            echo "SUCCESS: Kernel found!"
           elif [ -f arch/arm64/boot/Image.gz ]; then
-            echo "SUCCESS: Kernel built (Image.gz), moving to output..."
             cp arch/arm64/boot/Image.gz arch/arm64/boot/Image.gz-dtb
           else
-            echo "ERROR: Kernel file not found. Build failed."
+            echo "STILL FAILING: Searching for error..."
             exit 1
           fi
-          
-      - name: Upload Finished Kernel
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: M32-Kernel-Output
