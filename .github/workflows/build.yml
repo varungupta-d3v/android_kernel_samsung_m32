@@ -1,7 +1,7 @@
 name: Build M32 Kernel
 on:
   push:
-    branches: [ TWRP_11_Staging ] # Change this if your branch name is different
+    branches: [ TWRP_11_Staging ]
   workflow_dispatch:
 
 jobs:
@@ -20,34 +20,32 @@ jobs:
 
       - name: Compile Kernel
         run: |
+          # 1. GLOBAL SHELL FIX: Force the system to use bash instead of sh
+          sudo rm /bin/sh && sudo ln -s /bin/bash /bin/sh
+          
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          # Force bash to avoid "Illegal option" errors
-          export SHELL=/bin/bash
-          export CONFIG_SHELL=/bin/bash
           
           # Clean environment
           make clean
           make mrproper
           
-          # 1. Load the base config for M32
+          # 2. Generate config
           make m32_defconfig
           
-          # 2. Apply patches to the .config file
-          # Disable Stack Protector check that causes Error 1 with modern compilers
+          # 3. Magic Fixes for Samsung/MediaTek hurdles
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' .config
-          # Disable Samsung's broken performance monitor
           sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
           
-          # 3. Add USB Webcam (UVC) Support
+          # 4. Enable USB Webcam (UVC) Support
           echo "CONFIG_USB_CONFIGFS_F_UVC=y" >> .config
           echo "CONFIG_USB_F_UVC=y" >> .config
           echo "CONFIG_VIDEO_V4L2=y" >> .config
           
-          # 4. Automatically accept all config changes (fixes the "aborted!" error)
+          # 5. Sync the config changes
           make olddefconfig
           
-          # 5. Start the build process
+          # 6. Start the build
           make -j$(nproc)
           
       - name: Upload Finished Kernel
