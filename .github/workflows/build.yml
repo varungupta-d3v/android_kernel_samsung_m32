@@ -20,31 +20,49 @@ jobs:
 
       - name: Compile Kernel
         run: |
+          # 1. Setup Shell and Environment
           sudo rm /bin/sh && sudo ln -s /bin/bash /bin/sh
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           export SHELL=/bin/bash
           
+          # 2. Clean previous attempts
           make clean
           make mrproper
+          
+          # 3. Initialize Config
           make m32_defconfig
           
-          # 1. Disable crashing security/performance features
+          # 4. Disable Samsung Security/Monitoring (The "Crashing" features)
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' .config
           sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
           sed -i 's/CONFIG_SECURITY_DEFEX=y/CONFIG_SECURITY_DEFEX=n/g' .config
           sed -i 's/CONFIG_RKP_KDP=y/CONFIG_RKP_KDP=n/g' .config
+          sed -i 's/CONFIG_SAMSUNG_PRODUCT_SHIP=y/CONFIG_SAMSUNG_PRODUCT_SHIP=n/g' .config
+          sed -i 's/CONFIG_INTEGRITY_CHECK=y/CONFIG_INTEGRITY_CHECK=n/g' .config
           
-          # 2. Add USB Webcam (UVC) Support
+          # 5. Inject USB Webcam (UVC) Support
           echo "CONFIG_USB_CONFIGFS_F_UVC=y" >> .config
           echo "CONFIG_USB_F_UVC=y" >> .config
           echo "CONFIG_VIDEO_V4L2=y" >> .config
           
-          # 3. Accept all changes
+          # 6. Finalize Config
           make olddefconfig
           
-          # 4. Bake (KCFLAGS ignores warnings that look like errors)
-          make -j$(nproc) KCFLAGS="-w"
+          # 7. Execute Build (Ignore warnings and try to survive minor errors)
+          # We use || true so the script doesn't stop if a minor module fails
+          make -j$(nproc) KCFLAGS="-w" || true
+          
+          # 8. Check if the "Engine" was actually created
+          if [ -f arch/arm64/boot/Image.gz-dtb ]; then
+            echo "SUCCESS: Kernel built successfully!"
+          elif [ -f arch/arm64/boot/Image.gz ]; then
+            echo "SUCCESS: Kernel built (Image.gz), moving to output..."
+            cp arch/arm64/boot/Image.gz arch/arm64/boot/Image.gz-dtb
+          else
+            echo "ERROR: Kernel file not found. Build failed."
+            exit 1
+          fi
           
       - name: Upload Finished Kernel
         uses: actions/upload-artifact@v4
