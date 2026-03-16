@@ -1,0 +1,28 @@
+name: Build M32 Kernel
+on:
+  workflow_dispatch: # This allows you to start the build manually with a button
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+
+      - name: Install Build Tools
+        run: |
+          sudo apt update
+          sudo apt install -y bc bison build-essential flex git-core libssl-dev aarch64-linux-gnu-gcc
+
+      - name: Compile Kernel
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make m32_defconfig
+          make -j$(nproc)
+          
+      - name: Upload Finished Kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: M32-Kernel-Output
+          path: arch/arm64/boot/Image.gz-dtb
