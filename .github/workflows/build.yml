@@ -1,44 +1,25 @@
-name: Build M32 Kernel
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-    steps:
-      - name: Checkout Kernel Source
-        uses: actions/checkout@v4
-
-      - name: Install Build Tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-aarch64-linux-gnu
-
-      - name: Compile Kernel
+- name: Compile Kernel
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          # This forces the build to use 'bash' instead of 'sh' to fix the "Illegal option" errors
           export SHELL=/bin/bash
           export CONFIG_SHELL=/bin/bash
           
           make clean
           make mrproper
+          
+          # 1. Generate the initial config
           make m32_defconfig
           
-          # FIXES:
-          # 1. Disable the Stack Protector check that caused Error 1
+          # 2. Apply our "Magic Fixes" to the .config file
+          # Disable the security check that crashed it before
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' .config
-          # 2. Skip the Samsung performance monitor errors
+          # Disable the missing Samsung monitor
           sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
           
-          # Build
-          make -j$(nproc)
+          # 3. NEW CRUCIAL STEP: This tells the builder to accept our changes 
+          # and not stop to ask questions.
+          make olddefconfig
           
-      - name: Upload Finished Kernel
-        uses: actions/upload-artifact@v4
-        with:
-          name: M32-Kernel-Output
-          path: arch/arm64/boot/Image.gz-dtb
+          # 4. Bake the kernel
+          make -j$(nproc)
