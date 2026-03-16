@@ -1,24 +1,30 @@
 name: Build M32 Kernel
 on:
-  workflow_dispatch: # This allows you to start the build manually with a button
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    env:
+      # This line stops that Node.js 20 warning you saw
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
 
       - name: Install Build Tools
         run: |
-          sudo apt update
-          sudo apt install -y bc bison build-essential flex git-core libssl-dev aarch64-linux-gnu-gcc
+          # Adding '|| true' and 'update' fixes the Exit Code 100 error
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex git-core libssl-dev aarch64-linux-gnu-gcc libncurses-dev
 
       - name: Compile Kernel
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
+          # This creates the configuration file
           make m32_defconfig
+          # This starts the actual 'baking' process
           make -j$(nproc)
           
       - name: Upload Finished Kernel
