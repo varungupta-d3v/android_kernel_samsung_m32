@@ -1,12 +1,11 @@
 name: Build M32 Kernel
 on:
-  workflow_dispatch: # This gives you the manual "Run" button
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04 # Older version of Ubuntu for better compatibility
     env:
-      # This line fixes the Node.js 20 warning
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Kernel Source
@@ -15,18 +14,29 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-aarch64-linux-gnu
+          sudo apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-9-aarch64-linux-gnu
 
       - name: Compile Kernel
         run: |
           export ARCH=arm64
+          # Use GCC 9 specifically
           export CROSS_COMPILE=aarch64-linux-gnu-
-          # First, clean any old failed attempts
+          export CC=aarch64-linux-gnu-gcc-9
+          
+          # Fix the "Illegal option" errors by forcing a standard shell
+          export SHELL=/bin/bash
+          
+          # 1. Clean up
           make clean
           make mrproper
-          # Load your specific M32 instructions
+          
+          # 2. Setup Config
           make m32_defconfig
-          # Start the build (using all available CPU cores)
+          
+          # 3. Neutralize the missing kperfmon files so they don't stop the build
+          sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
+          
+          # 4. Bake it!
           make -j$(nproc)
           
       - name: Upload Finished Kernel
