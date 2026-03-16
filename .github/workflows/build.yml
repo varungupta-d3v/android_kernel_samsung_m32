@@ -1,25 +1,57 @@
-- name: Compile Kernel
+name: Build M32 Kernel
+on:
+  push:
+    branches: [ TWRP_11_Staging ] # Change this if your branch name is different
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex git-core libssl-dev libncurses-dev gcc-aarch64-linux-gnu
+
+      - name: Compile Kernel
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
+          # Force bash to avoid "Illegal option" errors
           export SHELL=/bin/bash
           export CONFIG_SHELL=/bin/bash
           
+          # Clean environment
           make clean
           make mrproper
           
-          # 1. Generate the initial config
+          # 1. Load the base config for M32
           make m32_defconfig
           
-          # 2. Apply our "Magic Fixes" to the .config file
-          # Disable the security check that crashed it before
+          # 2. Apply patches to the .config file
+          # Disable Stack Protector check that causes Error 1 with modern compilers
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' .config
-          # Disable the missing Samsung monitor
+          # Disable Samsung's broken performance monitor
           sed -i 's/CONFIG_KPERFMON=y/CONFIG_KPERFMON=n/g' .config
           
-          # 3. NEW CRUCIAL STEP: This tells the builder to accept our changes 
-          # and not stop to ask questions.
+          # 3. Add USB Webcam (UVC) Support
+          echo "CONFIG_USB_CONFIGFS_F_UVC=y" >> .config
+          echo "CONFIG_USB_F_UVC=y" >> .config
+          echo "CONFIG_VIDEO_V4L2=y" >> .config
+          
+          # 4. Automatically accept all config changes (fixes the "aborted!" error)
           make olddefconfig
           
-          # 4. Bake the kernel
+          # 5. Start the build process
           make -j$(nproc)
+          
+      - name: Upload Finished Kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: M32-Kernel-Output
+          path: arch/arm64/boot/Image.gz-dtb
